@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32-C3 — Sơ Đồ Mạch Xe Máy All-in-One</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #060e1a; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    const C = {
+      v12: '#ef4444', v5: '#f97316', v33: '#ec4899',
+      gnd: '#64748b', rpm: '#3b82f6', volt: '#22c55e',
+      ntc: '#0ea5e9', led: '#a855f7', pulse: '#eab308',
+      touch: '#06b6d4', bg: '#060e1a', card: '#0d1b2e',
+      ok: '#22c55e', warn: '#f59e0b',
+    };
+
+    function Tag({ color, children }) {
+      return (
+        <span style={{
+          background: color + '22', color, border: `1px solid ${color}44`,
+          borderRadius: 4, padding: '1px 7px', fontSize: 11, fontWeight: 'bold',
+          fontFamily: 'monospace', whiteSpace: 'nowrap'
+        }}>{children}</span>
+      );
+    }
+
+    function Section({ title, color, children }) {
+      return (
+        <div style={{
+          border: `1px solid ${color}55`, borderRadius: 10,
+          overflow: 'hidden', marginBottom: 12,
+        }}>
+          <div style={{
+            background: color + '18', borderBottom: `1px solid ${color}33`,
+            padding: '7px 14px', fontSize: 12, fontWeight: 'bold', color,
+            letterSpacing: 1
+          }}>{title}</div>
+          <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {children}
+          </div>
+        </div>
+      );
+    }
+
+    function Row({ from, to, wire, note, updated }) {
+      return (
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 30px 1fr 1fr',
+          alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6,
+          background: updated ? '#f59e0b08' : '#0a1525',
+          border: updated ? '1px solid #f59e0b33' : '1px solid #1e3a5f',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>{from}</div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: 24, height: 2, background: wire, borderRadius: 2, margin: '0 auto' }} />
+            <div style={{ fontSize: 8, color: wire, marginTop: 1 }}>→</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>{to}</div>
+          <div style={{ fontSize: 10, color: updated ? C.warn : '#475569', fontStyle: 'italic' }}>{note}</div>
+        </div>
+      );
+    }
+
+    function CompRow({ component, value, note, updated }) {
+      return (
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+          alignItems: 'center', gap: 8, padding: '5px 8px', borderRadius: 6,
+          background: updated ? '#f59e0b08' : '#0a1525',
+          border: updated ? '1px solid #f59e0b33' : '1px solid #1e3a5f',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{component}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{value}</div>
+          <div style={{ fontSize: 10, color: updated ? C.warn : '#475569', fontStyle: 'italic' }}>{note}</div>
+        </div>
+      );
+    }
+
+    const ComponentBox = ({ x, y, w, h, title, subtitle, bgColor = '#1e293b' }) => (
+      <g transform={`translate(${x}, ${y})`}>
+        <rect width={w} height={h} rx="16" fill={bgColor} stroke="#334155" strokeWidth="4" />
+        <text x={w/2} y="45" fill="#f8fafc" fontSize="26" fontWeight="bold" textAnchor="middle">{title}</text>
+        {subtitle && <text x={w/2} y="80" fill="#94a3b8" fontSize="18" textAnchor="middle">{subtitle}</text>}
+      </g>
+    );
+
+    const Annotation = ({ x, y, text1, text2 }) => (
+      <g transform={`translate(${x}, ${y})`} style={{ pointerEvents: 'none' }}>
+        <path d="M 0 0 L -20 20 L -20 60 L 320 60 L 320 20 L 10 20 Z" fill="#fbbf24" opacity="0.15" stroke="#fbbf24" strokeWidth="2" strokeDasharray="4,4" />
+        <text x="10" y="38" fill="#fde68a" fontSize="15" fontWeight="bold">{text1}</text>
+        {text2 && <text x="10" y="55" fill="#fef3c7" fontSize="13">{text2}</text>}
+      </g>
+    );
+
+    const ResistorSVG = ({ x, y, label, vertical = false, color = "#94a3b8" }) => (
+      <g>
+        <g transform={`translate(${x}, ${y}) ${vertical ? 'rotate(90)' : ''}`}>
+          <line x1="-36" y1="0" x2="-24" y2="0" stroke={color} strokeWidth="4" />
+          <line x1="24" y1="0" x2="36" y2="0" stroke={color} strokeWidth="4" />
+          <rect x="-24" y="-12" width="48" height="24" fill="#0f172a" stroke={color} strokeWidth="3" rx="3" />
+          <path d="M -16 0 L -8 -6 L 0 6 L 8 -6 L 16 0" fill="none" stroke={color} strokeWidth="2" />
+        </g>
+        <rect x={x - 85} y={y - 45} width="170" height="28" fill="#020617" opacity="0.95" rx="6" stroke="#334155" strokeWidth="1" />
+        <text x={x} y={y - 25} fill="#e2e8f0" fontSize="15" fontWeight="bold" textAnchor="middle">{label}</text>
+      </g>
+    );
+
+    const CapacitorSVG = ({ x, y, label, vertical = false, color = "#22c55e" }) => (
+      <g>
+        <g transform={`translate(${x}, ${y}) ${vertical ? 'rotate(90)' : ''}`}>
+          <line x1="-36" y1="0" x2="-10" y2="0" stroke={color} strokeWidth="4" />
+          <line x1="10" y1="0" x2="36" y2="0" stroke={color} strokeWidth="4" />
+          <line x1="-10" y1="-20" x2="-10" y2="20" stroke={color} strokeWidth="6" />
+          <line x1="10" y1="-20" x2="10" y2="20" stroke={color} strokeWidth="6" />
+        </g>
+        <rect x={x + 35} y={y - 20} width={label.length * 9 + 15} height="36" fill="#020617" opacity="0.95" rx="8" stroke={color} strokeWidth="2" />
+        <text x={x + 45} y={y + 5} fill={color} fontSize="17" fontWeight="bold">{label}</text>
+      </g>
+    );
+
+    const DiodeSVG = ({ x, y, label, vertical = false }) => (
+      <g>
+        <g transform={`translate(${x}, ${y}) ${vertical ? 'rotate(-90)' : ''}`}>
+          <line x1="-36" y1="0" x2="-14" y2="0" stroke="#94a3b8" strokeWidth="4" />
+          <line x1="14" y1="0" x2="36" y2="0" stroke="#94a3b8" strokeWidth="4" />
+          <polygon points="-14,-14 10,0 -14,14" fill="#1e293b" stroke="#94a3b8" strokeWidth="3" />
+          <line x1="10" y1="-14" x2="10" y2="14" stroke="#94a3b8" strokeWidth="5" />
+        </g>
+        {!vertical ? (
+          <g>
+            <rect x={x - 80} y={y - 50} width="160" height="30" fill="#020617" opacity="0.95" rx="6" stroke="#94a3b8" strokeWidth="1" />
+            <text x={x} y={y - 28} fill="#fca5a5" fontSize="15" fontWeight="bold" textAnchor="middle">{label}</text>
+          </g>
+        ) : (
+          <g>
+            <rect x={x + 35} y={y - 15} width={180} height="30" fill="#020617" opacity="0.95" rx="6" stroke="#94a3b8" strokeWidth="1" />
+            <text x={x + 45} y={y + 6} fill="#fca5a5" fontSize="15" fontWeight="bold" textAnchor="start">{label}</text>
+          </g>
+        )}
+      </g>
+    );
+
+    const ZenerDiodeSVG = ({ x, y, label, vertical = false }) => (
+      <g>
+        <g transform={`translate(${x}, ${y}) ${vertical ? 'rotate(-90)' : ''}`}>
+          <line x1="-36" y1="0" x2="-14" y2="0" stroke="#94a3b8" strokeWidth="4" />
+          <line x1="14" y1="0" x2="36" y2="0" stroke="#94a3b8" strokeWidth="4" />
+          <polygon points="-14,-14 10,0 -14,14" fill="#1e293b" stroke="#94a3b8" strokeWidth="3" />
+          <path d="M 10 -14 L 10 14 M 10 -14 L 2 -20 M 10 14 L 18 20" fill="none" stroke="#94a3b8" strokeWidth="4" />
+        </g>
+        {!vertical ? (
+          <g>
+            <rect x={x - 80} y={y - 50} width="160" height="30" fill="#020617" opacity="0.95" rx="6" stroke="#94a3b8" strokeWidth="1" />
+            <text x={x} y={y - 28} fill="#fca5a5" fontSize="15" fontWeight="bold" textAnchor="middle">{label}</text>
+          </g>
+        ) : (
+          <g>
+            <rect x={x + 35} y={y - 15} width={180} height="30" fill="#020617" opacity="0.95" rx="6" stroke="#94a3b8" strokeWidth="1" />
+            <text x={x + 45} y={y + 6} fill="#fca5a5" fontSize="15" fontWeight="bold" textAnchor="start">{label}</text>
+          </g>
+        )}
+      </g>
+    );
+
+    const PinSVG = ({ x, y, label, isRight = false, color = "#fff" }) => (
+      <g transform={`translate(${x}, ${y})`}>
+        <circle cx="0" cy="0" r="10" fill="#0f172a" stroke={color} strokeWidth="3" />
+        <circle cx="0" cy="0" r="4" fill={color} />
+        <text x={isRight ? 24 : -24} y="6" fill="#f8fafc" fontSize="18" fontWeight="bold" textAnchor={isRight ? "start" : "end"}>
+          {label}
+        </text>
+      </g>
+    );
+
+    const JunctionSVG = ({ x, y, color }) => (
+      <circle cx={x} cy={y} r="8" fill={color} />
+    );
+
+    const WireSVG = ({ path, net, color, isDashed = false, label, labelPos, hoveredNet, setHoveredNet, showFlow }) => {
+      const isHovered = hoveredNet === net;
+      const isFlowing = showFlow && (hoveredNet === null || isHovered);
+      return (
+        <g onMouseEnter={() => setHoveredNet(net)} onMouseLeave={() => setHoveredNet(null)} style={{ cursor: 'pointer' }}>
+          <path d={path} fill="none" stroke="transparent" strokeWidth="60" />
+          <path d={path} fill="none" stroke={color} strokeWidth={isHovered ? 8 : 4} strokeDasharray={isDashed ? "12,12" : "none"} style={{ transition: 'all 0.3s' }} />
+          {isFlowing && !isDashed && (
+            <circle r="6" fill="#fff" style={{ pointerEvents: 'none' }}>
+              <animateMotion dur={net === 'rpm' || net === 'pulse' ? '1.5s' : '4s'} repeatCount="indefinite" path={path} />
+            </circle>
+          )}
+          {(isHovered || label) && labelPos && (
+            <g transform={`translate(${labelPos.x}, ${labelPos.y})`} style={{ pointerEvents: 'none' }}>
+              <rect x={-(label.length * 9) / 2 - 15} y="-20" width={(label.length * 9) + 30} height="40" fill="#0f172a" rx="8" stroke={isHovered ? color : "transparent"} strokeWidth="2" />
+              <text x="0" y="6" fill={color} fontSize="16" fontWeight="bold" textAnchor="middle">{label}</text>
+            </g>
+          )}
+        </g>
+      );
+    };
+
+    function App() {
+      const [tab, setTab] = useState(0);
+      const [hoveredNet, setHoveredNet] = useState(null);
+      const [showFlow, setShowFlow] = useState(false);
+
+      const wrapperRef = useRef(null);
+      const [transform, setTransform] = useState({ x: 20, y: 20, k: 0.35 });
+      const [isDragging, setIsDragging] = useState(false);
+      const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+      useEffect(() => {
+        const el = wrapperRef.current;
+        if (!el) return;
+        const handleWheel = (e) => {
+          e.preventDefault();
+          setTransform(prev => {
+            const scaleMultiplier = e.deltaY > 0 ? 0.85 : 1.15;
+            const newK = Math.min(Math.max(prev.k * scaleMultiplier, 0.1), 3);
+            const rect = el.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const newX = mouseX - (mouseX - prev.x) * (newK / prev.k);
+            const newY = mouseY - (mouseY - prev.y) * (newK / prev.k);
+            return { x: newX, y: newY, k: newK };
+          });
+        };
+        el.addEventListener('wheel', handleWheel, { passive: false });
+        return () => el.removeEventListener('wheel', handleWheel);
+      }, [tab]);
+
+      const handlePointerDown = (e) => {
+        setIsDragging(true);
+        setDragStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+        e.currentTarget.setPointerCapture(e.pointerId);
+      };
+      const handlePointerMove = (e) => {
+        if (!isDragging) return;
+        setTransform(prev => ({ ...prev, x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }));
+      };
+      const handlePointerUp = (e) => {
+        setIsDragging(false);
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      };
+
+      const zoomIn = () => setTransform(p => ({ ...p, k: Math.min(p.k * 1.25, 3) }));
+      const zoomOut = () => setTransform(p => ({ ...p, k: Math.max(p.k * 0.8, 0.1) }));
+      const resetZoom = () => setTransform({ x: 20, y: 20, k: 0.35 });
+
+      const tabs = ['📋 ĐẤU NỐI', '🔩 LINH KIỆN', '🔌 GPIO', '⚠️ LƯU Ý', '🗺️ SƠ ĐỒ'];
+
+      return (
+        <div style={{ background: C.bg, minHeight: '100vh', padding: 16, fontFamily: 'monospace', color: '#e2e8f0' }}>
+          <div style={{ maxWidth: tab === 4 ? '100%' : 900, margin: '0 auto', transition: 'max-width 0.3s ease' }}>
+
+            <div style={{ marginBottom: 16, padding: '12px 16px', background: C.card, borderRadius: 10, border: '1px solid #1e3a5f' }}>
+              <div style={{ fontSize: 16, fontWeight: 'bold', color: '#34d399', letterSpacing: 1 }}>
+                ESP32-C3 SUPER MINI — HỆ THỐNG ALL-IN-ONE XE MÁY
+              </div>
+              <div style={{ fontSize: 11, color: '#475569', marginTop: 4 }}>
+                RPM · Voltage · NTC · TM1637 · TTP223 · PC817 · Buck 5V
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: 10, paddingTop: 10, borderTop: '1px solid #1e3a5f' }}>
+                {[
+                  [C.v12,'Dây +12V'], [C.v5,'Dây +5V'], [C.v33,'Dây +3.3V'],
+                  [C.gnd,'Dây GND'], [C.rpm,'Dây RPM'], [C.volt,'Dây Volt ADC'],
+                  [C.ntc,'Dây NTC ADC'], [C.led,'Dây TM1637'], [C.pulse,'Dây xung thô'],
+                  [C.touch,'Dây Touch'],
+                ].map(([col, lbl]) => (
+                  <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{ width: 20, height: 3, background: col, borderRadius: 2 }} />
+                    <span style={{ fontSize: 10, color: '#64748b' }}>{lbl}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 6, marginBottom: 14, overflowX: 'auto', paddingBottom: 4 }}>
+              {tabs.map((t, i) => (
+                <button key={i} onClick={() => setTab(i)} style={{
+                  padding: '8px 16px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                  fontFamily: 'monospace', fontWeight: 'bold', fontSize: 12,
+                  background: tab === i ? '#1d4ed8' : '#0d1b2e',
+                  color: tab === i ? '#fff' : '#475569',
+                  borderBottom: tab === i ? '2px solid #60a5fa' : '2px solid transparent',
+                  whiteSpace: 'nowrap', transition: 'all 0.2s'
+                }}>{t}</button>
+              ))}
+            </div>
+
+            {tab === 0 && (
+              <div>
+                <Section title="① NGUỒN" color={C.v12}>
+                  <Row from={<><Tag color={C.v12}>Acquy +12V</Tag></>} to={<><Tag color={C.v12}>Buck IN+</Tag></>} wire={C.v12} note="Dây đỏ trực tiếp (sau khóa)" />
+                  <Row from={<><Tag color={C.gnd}>Acquy GND</Tag></>} to={<><Tag color={C.gnd}>Buck IN−</Tag></>} wire={C.gnd} note="Dây đen trực tiếp" />
+                  <Row from={<><Tag color={C.v5}>Buck OUT+ (5V)</Tag></>} to={<><Tag color={C.v5}>ESP32 chân 5V</Tag></>} wire={C.v5} note="Chỉnh vôn kế đúng 5V trước" />
+                  <Row from={<><Tag color={C.gnd}>Buck OUT−</Tag></>} to={<><Tag color={C.gnd}>GND chung</Tag></>} wire={C.gnd} note="GND chung toàn mạch" />
+                  <Row from={<><Tag color={C.v33}>ESP32 chân 3V3</Tag></>} to={<><Tag color={C.v33}>VCC TM1637</Tag><span style={{color:'#475569',fontSize:10}}>+</span><Tag color={C.v33}>VCC TTP223</Tag></>} wire={C.v33} note="3.3V nội bộ ESP32 cấp ra" />
+                </Section>
+                <Section title="② ĐO VOLTAGE (ADC) — GPIO0" color={C.volt}>
+                  <Row from={<><Tag color={C.v12}>Acquy +12V</Tag></>} to={<><Tag color={C.v12}>R1 47kΩ đầu vào</Tag></>} wire={C.v12} note="Đầu vào cầu chia áp" />
+                  <Row from={<><Tag color={C.v12}>R1 47kΩ đầu ra</Tag></>} to={<><Tag color={C.volt}>R2 10kΩ đầu vào</Tag><span style={{color:'#475569',fontSize:10}}>= điểm giữa</span></>} wire={C.volt} note="Điểm giữa = ADC vào" />
+                  <Row from={<><Tag color={C.volt}>Điểm giữa (R1−R2)</Tag></>} to={<><Tag color={C.volt}>ESP32 GPIO0</Tag></>} wire={C.volt} note="Max ~2.9V khi acquy 17V ✅" />
+                  <Row from={<><Tag color={C.volt}>Tụ 104 chân A</Tag></>} to={<><Tag color={C.volt}>Điểm giữa (R1−R2)</Tag></>} wire={C.volt} note="Song song R2, hàn sát nhau" />
+                  <Row from={<><Tag color={C.gnd}>R2 đầu ra</Tag><span style={{color:'#475569',fontSize:10}}>+</span><Tag color={C.gnd}>Tụ 104 chân B</Tag></>} to={<><Tag color={C.gnd}>GND chung</Tag></>} wire={C.gnd} note="" />
+                </Section>
+                <Section title="③ ĐO NTC NHIỆT ĐỘ (ADC) — GPIO1" color={C.ntc}>
+                  <Row from={<><Tag color={C.v33}>ESP32 chân 3V3</Tag></>} to={<><Tag color={C.v33}>R kéo 10kΩ đầu vào</Tag></>} wire={C.v33} note="Trở kéo lên 3.3V" />
+                  <Row from={<><Tag color={C.ntc}>R kéo 10kΩ đầu ra</Tag></>} to={<><Tag color={C.ntc}>NTC đầu vào</Tag><span style={{color:'#475569',fontSize:10}}>= điểm giữa</span></>} wire={C.ntc} note="Điểm giữa = ADC vào" />
+                  <Row from={<><Tag color={C.ntc}>Điểm giữa (R−NTC)</Tag></>} to={<><Tag color={C.ntc}>ESP32 GPIO1</Tag></>} wire={C.ntc} note="" />
+                  <Row from={<><Tag color={C.ntc}>Tụ 104 chân A</Tag></>} to={<><Tag color={C.ntc}>Điểm giữa</Tag></>} wire={C.ntc} note="Song song NTC, hàn sát" />
+                  <Row from={<><Tag color={C.gnd}>NTC đầu ra</Tag><span style={{color:'#475569',fontSize:10}}>+</span><Tag color={C.gnd}>Tụ 104 chân B</Tag></>} to={<><Tag color={C.gnd}>GND chung</Tag></>} wire={C.gnd} note="" />
+                </Section>
+                <Section title="④ ĐO RPM — GPIO5 (PC817 cách ly quang)" color={C.rpm}>
+                  <Row from={<><Tag color={C.pulse}>Cuộn kích xe</Tag></>} to={<><Tag color={C.pulse}>R 1kΩ đầu vào</Tag></>} wire={C.pulse} note="Xung thô 8–40V" updated />
+                  <Row from={<><Tag color={C.pulse}>R 1kΩ đầu ra</Tag></>} to={<><Tag color={C.pulse}>PC817 chân 1 (A)</Tag></>} wire={C.pulse} note="IF ≈ 10mA @ 12V ✅" updated />
+                  <Row from={<><Tag color={C.pulse}>Zener 5.1V Cathode</Tag></>} to={<><Tag color={C.pulse}>PC817 chân 1 (A)</Tag></>} wire={C.pulse} note="⚡ MỚI: kẹp xung dương" updated />
+                  <Row from={<><Tag color={C.gnd}>Zener 5.1V Anode</Tag></>} to={<><Tag color={C.gnd}>PC817 chân 2 (K)</Tag></>} wire={C.gnd} note="⚡ MỚI: song song LED opto" updated />
+                  <Row from={<><Tag color={C.gnd}>PC817 chân 2 (K)</Tag></>} to={<><Tag color={C.gnd}>GND chung</Tag></>} wire={C.gnd} note="" />
+                  <Row from={<><Tag color={C.pulse}>1N4007 Cathode (+)</Tag></>} to={<><Tag color={C.pulse}>Điểm nối R−PC817 chân 1</Tag></>} wire={C.pulse} note="Kẹp xung ÂM (Cathode lên)" />
+                  <Row from={<><Tag color={C.gnd}>1N4007 Anode (−)</Tag></>} to={<><Tag color={C.gnd}>GND chung</Tag></>} wire={C.gnd} note="Xả xung âm xuống GND" />
+                  <Row from={<><Tag color={C.v33}>ESP32 chân 3V3</Tag></>} to={<><Tag color={C.v33}>R pullup 10kΩ đầu vào</Tag></>} wire={C.v33} note="Kéo lên 3.3V cho chân 4(C)" />
+                  <Row from={<><Tag color={C.rpm}>R pullup 10kΩ đầu ra</Tag></>} to={<><Tag color={C.rpm}>PC817 chân 4 (C)</Tag></>} wire={C.rpm} note="= điểm tín hiệu ra" />
+                  <Row from={<><Tag color={C.gnd}>PC817 chân 3 (E)</Tag></>} to={<><Tag color={C.gnd}>GND chung</Tag></>} wire={C.gnd} note="" />
+                  <Row from={<><Tag color={C.rpm}>PC817 chân 4 (C)</Tag></>} to={<><Tag color={C.rpm}>R bảo vệ 1kΩ → ESP32 GPIO5</Tag></>} wire={C.rpm} note="Tín hiệu 3.3V sạch ✅" />
+                </Section>
+                <Section title="⑤ HIỂN THỊ TM1637 — GPIO4 (CLK) + GPIO6 (DIO)" color={C.led}>
+                  <Row from={<><Tag color={C.v33}>ESP32 chân 3V3</Tag></>} to={<><Tag color={C.v33}>TM1637 VCC</Tag></>} wire={C.v33} note="" />
+                  <Row from={<><Tag color={C.gnd}>GND chung</Tag></>} to={<><Tag color={C.gnd}>TM1637 GND</Tag></>} wire={C.gnd} note="" />
+                  <Row from={<><Tag color={C.led}>ESP32 GPIO4</Tag></>} to={<><Tag color={C.led}>TM1637 CLK</Tag></>} wire={C.led} note="" />
+                  <Row from={<><Tag color={C.led}>ESP32 GPIO6</Tag></>} to={<><Tag color={C.led}>TM1637 DIO</Tag></>} wire={C.led} note="" />
+                </Section>
+                <Section title="⑥ CẢM BIẾN CHẠM TTP223 — GPIO7" color={C.touch}>
+                  <Row from={<><Tag color={C.v33}>ESP32 chân 3V3</Tag></>} to={<><Tag color={C.v33}>TTP223 VCC</Tag></>} wire={C.v33} note="" />
+                  <Row from={<><Tag color={C.gnd}>GND chung</Tag></>} to={<><Tag color={C.gnd}>TTP223 GND</Tag></>} wire={C.gnd} note="" />
+                  <Row from={<><Tag color={C.touch}>TTP223 SIG (OUT)</Tag></>} to={<><Tag color={C.touch}>ESP32 GPIO7</Tag></>} wire={C.touch} note="Chạm → đổi mode RPM/VOLT/NTC" />
+                </Section>
+              </div>
+            )}
+
+            {tab === 1 && (
+              <div>
+                <div style={{ marginBottom: 8, fontSize: 11, color: '#475569' }}>🟡 = cập nhật mới cho độ ổn định cao nhất</div>
+                <Section title="DANH SÁCH LINH KIỆN" color="#34d399">
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, padding: '3px 8px' }}>
+                    <span style={{ color: '#475569', fontSize: 10, fontWeight: 'bold' }}>LINH KIỆN</span>
+                    <span style={{ color: '#475569', fontSize: 10, fontWeight: 'bold' }}>GIÁ TRỊ / MODEL</span>
+                    <span style={{ color: '#475569', fontSize: 10, fontWeight: 'bold' }}>GHI CHÚ</span>
+                  </div>
+                  <CompRow component={<Tag color={C.v12}>MCU</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>ESP32-C3 Super Mini</span>} note="Board chính" />
+                  <CompRow component={<Tag color={C.v5}>Buck DC-DC</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>LM2596 hoặc MP1584</span>} note="Chỉnh output = 5.0V" />
+                  <CompRow component={<Tag color={C.led}>Màn hình</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>TM1637 LED 7 đoạn</span>} note="Nhét vào vỏ vol kế cũ" />
+                  <CompRow component={<Tag color={C.touch}>Cảm biến chạm</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>TTP223</span>} note="Dán sau vỏ nhựa ≤3mm" />
+                  <CompRow component={<Tag color={C.rpm}>Opto cách ly</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>PC817</span>} note="Cách ly GND xe và mạch" />
+                  <CompRow component={<Tag color={C.pulse}>Diode kẹp âm</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>1N4007</span>} note="Cathode (+) hướng lên" />
+                  <CompRow component={<Tag color={C.warn}>Zener kẹp dương</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>5.1V 0.5W</span>} note="⚡ MỚI — bảo vệ PC817" updated />
+                  <CompRow component={<Tag color={C.pulse}>R giới hạn dòng</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>1kΩ</span>} note="⚡ ĐỔI từ 2.2kΩ → IF≈10mA" updated />
+                  <CompRow component={<Tag color={C.volt}>R1 chia áp volt</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>47kΩ (1/4W)</span>} note="" />
+                  <CompRow component={<Tag color={C.volt}>R2 chia áp volt</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>10kΩ (1/4W)</span>} note="17V → 2.98V ✅" />
+                  <CompRow component={<Tag color={C.ntc}>R kéo NTC</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>10kΩ (1/4W)</span>} note="Bằng giá trị NTC @ 25°C" />
+                  <CompRow component={<Tag color={C.rpm}>R pullup RPM</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>10kΩ (1/4W)</span>} note="3.3V → chân 4(C) PC817" />
+                  <CompRow component={<Tag color={C.rpm}>R bảo vệ GPIO</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>1kΩ (1/4W)</span>} note="Trước GPIO5" />
+                  <CompRow component={<Tag color={C.volt}>Tụ lọc ADC Volt</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>Tụ Gốm 104 (0.1µF - 50V)</span>} note="Song song R2, hàn sát" />
+                  <CompRow component={<Tag color={C.ntc}>Tụ lọc ADC NTC</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>Tụ Gốm 104 (0.1µF - 50V)</span>} note="Song song NTC, hàn sát" />
+                  <CompRow component={<Tag color={C.ntc}>Đầu dò nhiệt</Tag>} value={<span style={{color:'#e2e8f0',fontSize:11}}>NTC 10kΩ B=3950</span>} note="Đọc datasheet xác nhận Beta" />
+                </Section>
+              </div>
+            )}
+
+            {tab === 2 && (
+              <Section title="BẢNG GPIO ESP32-C3 SUPER MINI" color="#60a5fa">
+                <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 140px', gap: 8, padding: '3px 8px' }}>
+                  <span style={{ color: '#475569', fontSize: 10, fontWeight: 'bold' }}>CHÂN</span>
+                  <span style={{ color: '#475569', fontSize: 10, fontWeight: 'bold' }}>CHỨC NĂNG</span>
+                  <span style={{ color: '#475569', fontSize: 10, fontWeight: 'bold' }}>GHI CHÚ</span>
+                </div>
+                {[
+                  ['5V (VIN)', C.v5,  'Nguồn vào từ Buck', ''],
+                  ['GND',      C.gnd, 'GND chung',         ''],
+                  ['3V3',      C.v33, 'Cấp nguồn TM1637 + TTP223 + pullup', 'Output, không vào'],
+                  ['GPIO0',    C.volt,'ADC đo Voltage (R1+R2)', 'Strapping pin — OK'],
+                  ['GPIO1',    C.ntc, 'ADC đo NTC nhiệt độ',    ''],
+                  ['GPIO4',    C.led, 'CLK TM1637',             ''],
+                  ['GPIO5',    C.rpm, 'Xung RPM vào (từ PC817)', 'Qua R 1kΩ bảo vệ'],
+                  ['GPIO6',    C.led, 'DIO TM1637',             ''],
+                  ['GPIO7',    C.touch,'TTP223 SIG — đổi mode',  'INPUT_PULLDOWN'],
+                  ['GPIO2,3,8..21', '#334155', 'Chưa dùng — dự phòng', ''],
+                ].map(([pin, col, fn, note]) => (
+                  <div key={pin} style={{
+                    display: 'grid', gridTemplateColumns: '100px 1fr 140px',
+                    alignItems: 'center', gap: 8, padding: '6px 8px',
+                    borderRadius: 6, background: '#0a1525', border: '1px solid #1e3a5f',
+                  }}>
+                    <Tag color={col}>{pin}</Tag>
+                    <span style={{ color: '#e2e8f0', fontSize: 11 }}>{fn}</span>
+                    <span style={{ color: '#475569', fontSize: 10, fontStyle: 'italic' }}>{note}</span>
+                  </div>
+                ))}
+              </Section>
+            )}
+
+            {tab === 3 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[
+                  { icon: '⚡', color: C.warn, title: 'Thay đổi so với phiên bản trước', items: [
+                    'Sơ đồ đã được quy hoạch "Mạch In" KHÔNG CÓ BẤT KỲ ĐƯỜNG DÂY NÀO CHÉO NHAU.',
+                    'GND được dẫn theo 2 hành lang độc lập trái/phải không vướng tín hiệu.',
+                    'Tụ điện, Trở được vẽ đúng chuẩn quốc tế kèm chân cắm 2 đầu.'
+                  ]},
+                  { icon: '🔴', color: C.v12, title: 'Nguồn', items: [
+                    'Buck converter: chỉnh vôn kế đúng 5.0V trước khi gắn ESP32',
+                    'GND chung: tất cả GND nối về 1 điểm — cực âm acquy / sườn xe',
+                    'Tụ lọc nguồn: thêm 100µF + 100nF song song đầu ra Buck nếu nhiễu',
+                  ]},
+                  { icon: '🌡️', color: C.ntc, title: 'NTC nhiệt độ', items: [
+                    'NTC 10kΩ Beta=3950 — đọc datasheet xác nhận Beta của loại bạn mua',
+                    'Tụ 104 hàn càng sát điểm giữa càng tốt để lọc nhiễu ADC',
+                    'Chỉnh hệ số Beta trong code nếu nhiệt độ đọc bị lệch',
+                  ]},
+                  { icon: '⚙️', color: C.rpm, title: 'RPM / PC817', items: [
+                    '1N4007 Cathode (+) hướng LÊN (nối vào dây tín hiệu), Anode (−) xuống GND',
+                    'Zener 5.1V: Cathode nối chân 1(A) PC817, Anode nối chân 2(K) / GND',
+                    'Kiểm tra xung cuộn kích bằng VOM AC trước khi gắn mạch',
+                    'Nếu RPM đọc sai: điều chỉnh PULSES_PER_REV trong code',
+                  ]},
+                  { icon: '🔵', color: C.touch, title: 'TTP223', items: [
+                    'Dán sau vỏ nhựa ≤ 3mm là chạm được, không cần khoét lỗ',
+                    'Tránh để sát dây điện cao áp — dễ trigger nhầm',
+                  ]},
+                  { icon: '📡', color: C.led, title: 'Đi dây lên đầu đèn', items: [
+                    'Dùng cáp mạng LAN (UTP) kéo dây từ hộp mạch lên TM1637',
+                    'Chỉ cần 4 sợi: VCC, GND, CLK, DIO — đủ trong 1 dây LAN',
+                    'Bọc đầu nối bằng ống gen co nhiệt chống rung, chống nước',
+                  ]},
+                  { icon: '💾', color: '#60a5fa', title: 'Nạp code & Cấu hình quan trọng', items: [
+                    'analogSetAttenuation(ADC_11db) — bắt buộc trong setup(), thiếu dòng này ADC chỉ đo ~950mV thay vì 3.1V',
+                    'GPIO0 là strapping pin — nếu lỗi flash: tháo dây ADC volt khi nạp, cắm lại sau',
+                    'Library cần: TM1637Display by Avishay Orpaz',
+                    'Vị trí chân trong sơ đồ được xếp lại để dây không cắt nhau — hàn theo TÊN LABEL, không theo vị trí',
+                  ]},
+                ].map(({ icon, color, title, items }) => (
+                  <div key={title} style={{ border: `1px solid ${color}44`, borderRadius: 10, overflow: 'hidden' }}>
+                    <div style={{ background: color + '15', borderBottom: `1px solid ${color}33`, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', color }}>
+                      {icon} {title}
+                    </div>
+                    <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      {items.map(item => (
+                        <div key={item} style={{ display: 'flex', gap: 8, fontSize: 11, color: '#94a3b8' }}>
+                          <span style={{ color, flexShrink: 0 }}>›</span>
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {tab === 4 && (
+              <div style={{ background: '#0b1120', borderRadius: 12, border: '2px solid #1e3a5f', padding: '12px', marginTop: 10 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10 }}>
+                  <div>
+                    <div style={{ color: '#34d399', fontWeight: 'bold', fontSize: 16 }}>🗺️ SƠ ĐỒ ĐẤU NỐI KỸ THUẬT (BẢN HOÀN HẢO ZERO-CROSSING)</div>
+                    <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>📌 Không một sợi dây nào vắt chéo nhau. <strong style={{color:'#fef08a'}}>Lăn chuột</strong> để Phóng to/Thu nhỏ. <strong style={{color:'#fef08a'}}>Nắm kéo</strong> để di chuyển bề mặt.</div>
+                  </div>
+                  <button onClick={() => setShowFlow(!showFlow)} style={{
+                    padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                    fontWeight: 'bold', fontSize: 12, transition: 'all 0.2s',
+                    background: showFlow ? '#2563eb' : '#334155', color: '#fff',
+                    boxShadow: showFlow ? '0 0 15px rgba(37,99,235,0.5)' : 'none'
+                  }}>
+                    {showFlow ? '■ Tắt dòng điện' : '▶ Mô phỏng điện'}
+                  </button>
+                </div>
+
+                <div
+                  ref={wrapperRef}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
+                  style={{
+                    width: '100%', height: '75vh', overflow: 'hidden',
+                    border: '2px solid #1e293b', borderRadius: 8,
+                    cursor: isDragging ? 'grabbing' : 'grab',
+                    background: '#020617', position: 'relative',
+                    touchAction: 'none'
+                  }}
+                >
+                  <div style={{ position: 'absolute', bottom: 16, right: 16, display: 'flex', gap: 8, zIndex: 10 }}>
+                    <button onClick={zoomOut} style={{ width: 40, height: 40, background: '#1e293b', color: '#fff', border: '1px solid #475569', borderRadius: 8, fontSize: 20, cursor: 'pointer' }}>-</button>
+                    <button onClick={resetZoom} style={{ padding: '0 16px', height: 40, background: '#1e293b', color: '#fff', border: '1px solid #475569', borderRadius: 8, fontSize: 14, fontWeight: 'bold', cursor: 'pointer' }}>Mặc định</button>
+                    <button onClick={zoomIn} style={{ width: 40, height: 40, background: '#1e293b', color: '#fff', border: '1px solid #475569', borderRadius: 8, fontSize: 20, cursor: 'pointer' }}>+</button>
+                  </div>
+
+                  <div style={{
+                    transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
+                    transformOrigin: '0 0', width: 3200, height: 2000,
+                    willChange: isDragging ? 'transform' : 'auto'
+                  }}>
+                    <svg viewBox="0 0 3200 2000" style={{ width: 3200, height: 2000, display: 'block' }}>
+                      <defs>
+                        <pattern id="gridPattern" width="80" height="80" patternUnits="userSpaceOnUse">
+                          <circle cx="4" cy="4" r="2.5" fill="#1e293b" />
+                        </pattern>
+                      </defs>
+                      <rect width="100%" height="100%" fill="url(#gridPattern)" />
+
+                      {/* GND BUS */}
+                      <WireSVG path="M 100 1850 L 3100 1850" net="gnd" color={C.gnd} isDashed={true} label="GND CHUNG TỔNG (Nối ra sườn xe hoặc Âm bình)" labelPos={{x:1600,y:1850}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 330 410 L 330 480 L 100 480 L 100 1850" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 600 410 L 600 480" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 870 410 L 870 480" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 330 790 L 330 840 L 100 840" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={330} y={840} color={C.gnd} />
+                      <WireSVG path="M 850 806 L 850 840 L 100 840" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 850 1146 L 850 1180 L 100 1180" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 950 1146 L 950 1180 L 100 1180" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 850 1596 L 850 1640 L 100 1640" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 900 1596 L 900 1640" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 950 1510 L 950 1640" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 1070 1510 L 1070 1640" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 1850 900 L 2950 900 L 2950 1850" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 2500 500 L 2900 500 L 2900 1850" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 2500 1000 L 2900 1000" net="gnd" color={C.gnd} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+
+                      {/* 12V & 5V */}
+                      <WireSVG path="M 330 330 L 600 330" net="v12" color={C.v12} label="+12V TỪ ĐIỆN SAU KHÓA" labelPos={{x:460,y:300}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 400 330 L 400 1010 L 600 1010" net="v12" color={C.v12} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={400} y={330} color={C.v12} />
+                      <WireSVG path="M 870 330 L 870 100 L 1480 100 L 1480 720 L 1600 720" net="v5" color={C.v5} label="5V SẠCH CẤP CHO ESP32" labelPos={{x:1150,y:70}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+
+                      {/* 3.3V BUS */}
+                      <WireSVG path="M 1600 660 L 1450 660 L 1450 150 L 2800 150 L 2800 450 L 2500 450" net="v33" color={C.v33} label="TRỤC 3.3V TỪ ESP CẤP ĐI" labelPos={{x:2100,y:120}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 1450 150 L 750 150 L 750 594" net="v33" color={C.v33} label="3.3V KÉO NTC" labelPos={{x:950,y:120}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={1450} y={150} color={C.v33} />
+                      <WireSVG path="M 1150 150 L 1150 1314" net="v33" color={C.v33} label="3.3V PULL-UP RPM" labelPos={{x:1150,y:550}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={1150} y={150} color={C.v33} />
+                      <WireSVG path="M 2800 450 L 2800 950 L 2500 950" net="v33" color={C.v33} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={2800} y={450} color={C.v33} />
+
+                      {/* NTC SIGNAL */}
+                      <WireSVG path="M 330 730 L 600 730" net="ntc" color={C.ntc} label="TÍN HIỆU TỪ NTC" labelPos={{x:460,y:700}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 600 730 L 750 730" net="ntc" color={C.ntc} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 750 666 L 750 730" net="ntc" color={C.ntc} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 750 730 L 850 730" net="ntc" color={C.ntc} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={750} y={730} color={C.ntc} />
+                      <WireSVG path="M 850 730 L 850 734" net="ntc" color={C.ntc} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 850 730 L 1250 730 L 1250 1020 L 1600 1020" net="ntc" color={C.ntc} label="ADC (Đo Nhiệt) -> VÀO GPIO 1" labelPos={{x:1050,y:700}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={850} y={730} color={C.ntc} />
+
+                      {/* VOLT ADC */}
+                      <WireSVG path="M 600 1010 L 714 1010" net="v12" color={C.v12} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 786 1010 L 850 1010" net="volt" color={C.volt} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 850 1010 L 850 1074" net="volt" color={C.volt} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 850 1010 L 950 1010" net="volt" color={C.volt} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 950 1010 L 950 1074" net="volt" color={C.volt} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={850} y={1010} color={C.volt} />
+                      <JunctionSVG x={950} y={1010} color={C.volt} />
+                      <WireSVG path="M 950 1010 L 1300 1010 L 1300 1080 L 1600 1080" net="volt" color={C.volt} label="ADC ĐO BÌNH -> VÀO GPIO 0" labelPos={{x:1150,y:980}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+
+                      {/* RPM SIGNAL */}
+                      <WireSVG path="M 330 1460 L 714 1460" net="pulse" color={C.pulse} label="XUNG AC THÔ (-40V đến +40V)" labelPos={{x:520,y:1430}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 786 1460 L 850 1460" net="pulse" color={C.pulse} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 850 1460 L 850 1524" net="pulse" color={C.pulse} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 850 1460 L 900 1460" net="pulse" color={C.pulse} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 900 1460 L 900 1524" net="pulse" color={C.pulse} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 900 1460 L 950 1460" net="pulse" color={C.pulse} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={850} y={1460} color={C.pulse} />
+                      <JunctionSVG x={900} y={1460} color={C.pulse} />
+                      <WireSVG path="M 1150 1386 L 1150 1460" net="rpm" color={C.rpm} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 1070 1460 L 1150 1460" net="rpm" color={C.rpm} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 1150 1460 L 1214 1460" net="rpm" color={C.rpm} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <JunctionSVG x={1150} y={1460} color={C.rpm} />
+                      <WireSVG path="M 1286 1460 L 2000 1460 L 2000 840 L 1850 840" net="rpm" color={C.rpm} label="XUNG VUÔNG SẠCH -> VÀO GPIO 5" labelPos={{x:1600,y:1430}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+
+                      {/* LED & TOUCH */}
+                      <WireSVG path="M 2500 550 L 1950 550 L 1950 660 L 1850 660" net="led" color={C.led} label="DATA CLK -> TỪ GPIO 4" labelPos={{x:2200,y:520}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 2500 600 L 2050 600 L 2050 720 L 1850 720" net="led" color={C.led} label="DATA DIO -> TỪ GPIO 6" labelPos={{x:2200,y:570}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+                      <WireSVG path="M 2500 1050 L 2150 1050 L 2150 780 L 1850 780" net="touch" color={C.touch} label="XUNG CHẠM (TOUCH) -> VÀO GPIO 7" labelPos={{x:2300,y:1020}} hoveredNet={hoveredNet} setHoveredNet={setHoveredNet} showFlow={showFlow} />
+
+                      {/* COMPONENTS */}
+                      <ComponentBox x="150" y="300" w="180" h="150" title="Điện Xe" subtitle="Dây Sau Ổ Khóa" bgColor="#451a03" />
+                      <PinSVG x="330" y="330" label="+12V" isRight={true} color={C.v12} />
+                      <PinSVG x="330" y="410" label="GND (-)" isRight={true} color={C.gnd} />
+
+                      <ComponentBox x="600" y="300" w="270" h="150" title="Mạch Hạ Áp" subtitle="LM2596 (Chỉnh đúng 5V)" bgColor="#064e3b" />
+                      <PinSVG x="600" y="330" label="IN+" color={C.v12} />
+                      <PinSVG x="600" y="410" label="IN-" color={C.gnd} />
+                      <PinSVG x="870" y="330" label="OUT+ (5V)" isRight={true} color={C.v5} />
+                      <PinSVG x="870" y="410" label="OUT-" isRight={true} color={C.gnd} />
+
+                      <ComponentBox x="150" y="700" w="180" h="120" title="Đầu Dò NTC" subtitle="Loại 10K (3950)" bgColor="#831843" />
+                      <PinSVG x="330" y="730" label="Signal" isRight={true} color={C.ntc} />
+                      <PinSVG x="330" y="790" label="GND" isRight={true} color={C.gnd} />
+
+                      <g transform="translate(600, 550)">
+                        <rect width="360" height="280" rx="16" fill="rgba(14,165,233,0.05)" stroke="#0ea5e9" strokeWidth="3" strokeDasharray="15,15" />
+                        <text x="180" y="45" fill="#7dd3fc" fontSize="22" fontWeight="bold" textAnchor="middle">MẠCH CHIA ÁP NTC</text>
+                      </g>
+                      <PinSVG x="600" y="730" label="Vào NTC" color={C.ntc} />
+                      <ResistorSVG x="750" y="630" label="Trở 10kΩ (1/4W)" vertical={true} color={C.v33} />
+                      <CapacitorSVG x="850" y="770" label="Tụ Gốm 104 (0.1µF)" vertical={true} color={C.ntc} />
+
+                      <g transform="translate(600, 880)">
+                        <rect width="450" height="300" rx="16" fill="rgba(34,197,94,0.05)" stroke="#22c55e" strokeWidth="3" strokeDasharray="15,15" />
+                        <text x="225" y="45" fill="#86efac" fontSize="22" fontWeight="bold" textAnchor="middle">MẠCH CHIA ÁP ĐO BÌNH 12V</text>
+                      </g>
+                      <PinSVG x="600" y="1010" label="V-IN" color={C.v12} />
+                      <ResistorSVG x="750" y="1010" label="R1: 47kΩ (1/4W)" color={C.v12} />
+                      <ResistorSVG x="850" y="1110" label="R2: 10kΩ (1/4W)" vertical={true} />
+                      <CapacitorSVG x="950" y="1110" label="Tụ Gốm 104 (0.1µF)" vertical={true} />
+
+                      <ComponentBox x="150" y="1400" w="180" h="120" title="Cuộn Kích" subtitle="Mâm Lửa (Pickup)" bgColor="#27272a" />
+                      <PinSVG x="330" y="1460" label="Xung" isRight={true} color={C.pulse} />
+
+                      <g transform="translate(600, 1300)">
+                        <rect width="750" height="400" rx="16" fill="rgba(59,130,246,0.05)" stroke="#3b82f6" strokeWidth="3" strokeDasharray="15,15" />
+                        <text x="375" y="45" fill="#93c5fd" fontSize="22" fontWeight="bold" textAnchor="middle">MẠCH CÁCH LY QUANG &amp; BẢO VỆ RPM</text>
+                      </g>
+                      <ResistorSVG x="750" y="1460" label="R: 1kΩ (1/2W) Hạn Dòng" color={C.pulse} />
+                      <DiodeSVG x="850" y="1560" label="Diode 1N4007 (Xả dòng -)" vertical={true} />
+                      <ZenerDiodeSVG x="900" y="1560" label="Zener 5.1V (Dập vọt +)" vertical={true} />
+
+                      <ComponentBox x="950" y="1420" w="120" h="120" title="PC817" subtitle="Opto Cách Ly" bgColor="#450a0a" />
+                      <PinSVG x="950" y="1460" label="1 (A)" color={C.pulse} />
+                      <PinSVG x="950" y="1510" label="2 (K)" color={C.gnd} />
+                      <PinSVG x="1070" y="1460" label="4 (C)" isRight={true} color={C.rpm} />
+                      <PinSVG x="1070" y="1510" label="3 (E)" isRight={true} color={C.gnd} />
+
+                      <ResistorSVG x="1150" y="1350" label="Trở 10kΩ Pull-up" vertical={true} color={C.v33} />
+                      <ResistorSVG x="1250" y="1460" label="Trở 1kΩ Bảo vệ" color={C.rpm} />
+
+                      <ComponentBox x="1600" y="600" w="250" h="550" title="ESP32-C3" subtitle="Board Super Mini" bgColor="#1e3a8a" />
+                      <PinSVG x="1600" y="660" label="3.3V" color={C.v33} />
+                      <PinSVG x="1600" y="720" label="5V (VIN)" color={C.v5} />
+                      <PinSVG x="1600" y="780" label="GPIO 2" color="#475569" />
+                      <PinSVG x="1600" y="840" label="GPIO 3" color="#475569" />
+                      <PinSVG x="1600" y="900" label="GPIO 8" color="#475569" />
+                      <PinSVG x="1600" y="960" label="GPIO 9" color="#475569" />
+                      <PinSVG x="1600" y="1020" label="GPIO 1 (Nhiệt)" color={C.ntc} />
+                      <PinSVG x="1600" y="1080" label="GPIO 0 (ADC Vôn)" color={C.volt} />
+                      <PinSVG x="1850" y="660" label="GPIO 4 (CLK)" isRight={true} color={C.led} />
+                      <PinSVG x="1850" y="720" label="GPIO 6 (DIO)" isRight={true} color={C.led} />
+                      <PinSVG x="1850" y="780" label="GPIO 7 (TOUCH)" isRight={true} color={C.touch} />
+                      <PinSVG x="1850" y="840" label="GPIO 5 (RPM)" isRight={true} color={C.rpm} />
+                      <PinSVG x="1850" y="900" label="GND" isRight={true} color={C.gnd} />
+                      <PinSVG x="1850" y="960" label="GPIO 10" isRight={true} color="#475569" />
+                      <PinSVG x="1850" y="1020" label="GPIO 20" isRight={true} color="#475569" />
+                      <PinSVG x="1850" y="1080" label="GPIO 21" isRight={true} color="#475569" />
+
+                      <ComponentBox x="2500" y="400" w="220" h="250" title="Màn Hình LED" subtitle="Module TM1637" bgColor="#4c1d95" />
+                      <text x="2610" y="520" fill="#f43f5e" fontSize="48" fontWeight="bold" textAnchor="middle" style={{fontFamily:'monospace'}}>88 °C</text>
+                      <PinSVG x="2500" y="450" label="VCC (3.3V)" color={C.v33} />
+                      <PinSVG x="2500" y="500" label="GND" color={C.gnd} />
+                      <PinSVG x="2500" y="550" label="CLK" color={C.led} />
+                      <PinSVG x="2500" y="600" label="DIO" color={C.led} />
+
+                      <ComponentBox x="2500" y="900" w="220" h="200" title="Cảm Biến Dán" subtitle="Module Chạm TTP223" bgColor="#0891b2" />
+                      <circle cx="2610" cy="1120" r="35" fill="#164e63" stroke="#06b6d4" strokeWidth="4" strokeDasharray="6,6" />
+                      <text x="2610" y="1130" fill="#67e8f9" fontSize="20" fontWeight="bold" textAnchor="middle">TOUCH</text>
+                      <PinSVG x="2500" y="950" label="VCC (3.3V)" color={C.v33} />
+                      <PinSVG x="2500" y="1000" label="GND" color={C.gnd} />
+                      <PinSVG x="2500" y="1050" label="SIG (Out)" color={C.touch} />
+
+                      <Annotation x="620" y="180" text1="Lưu ý: Mạch LM2596 có biến trở màu xanh." text2="Vặn ốc đồng để đo đầu ra chuẩn 5.0V trước khi gắn ESP." />
+                      <Annotation x="980" y="680" text1="Tụ 104: Lọc dội thông số / Điện trở 10k: Kéo nguồn." text2="Trở 10K phải bằng với thông số điện trở NTC ở 25°C." />
+                      <Annotation x="1080" y="1050" text1="Tụ 104: Cung cấp dòng phóng tức thời cho lõi ADC." text2="Bắt buộc phải có để số Vôn không bị nhảy loạn." />
+                      <Annotation x="500" y="1630" text1="Diode 1N4007 dập dòng âm (-40V)." text2="Diode Zener dập dòng dương vọt đỉnh bảo vệ Opto." />
+                      <Annotation x="2750" y="580" text1="Nên dùng cáp mạng LAN (dây cặp xoắn)" text2="Để dẫn 4 đường dây này lên đầu đèn chống nhiễu từ Bugi." />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
