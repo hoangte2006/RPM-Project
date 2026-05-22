@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <TM1637Display.h>
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 
 // --- Định nghĩa các chân cho ESP32-C3 theo sơ đồ ---
 #define ADC_PIN     0  // GPIO 0: Đo điện áp (qua bộ chia áp 47k - 10k)
@@ -25,17 +27,15 @@ const float BCOEFFICIENT = 3950.0;         // Hệ số Beta của NTC (thườn
 
 // --- Biến cho RPM ---
 volatile unsigned long pulseCount = 0;
-volatile unsigned long lastPulseTime = 0; // Biến ghi nhớ thời điểm xuất hiện xung cuối cùng
+volatile unsigned long lastPulseTime = 0;
 unsigned long lastRpmTime = 0;
 int currentRpm = 0;
-int smoothedRpm = 0; // Biến lưu vòng tua đã được làm mượt
+int smoothedRpm = 0;
+unsigned long rideTimerStart = 0;
 
-// ISR: Trình phục vụ ngắt cho RPM (Kích hoạt khi có xung từ opto kéo xuống Mass)
 void IRAM_ATTR rpmInterrupt() {
-  unsigned long currentTime = micros(); // Lấy thời gian thực tính bằng micro-giây
-  // Lọc nhiễu (Debounce): Redline của xe Wave tối đa khoảng 10.000 RPM (1 vòng tốn 6000us).
-  // Nếu 2 xung đến cách nhau nhỏ hơn 3000us (tương đương tốc độ > 20.000 RPM) thì chắc chắn là nhiễu gai.
-  if (currentTime - lastPulseTime > 3000) {
+  unsigned long currentTime = micros();
+  if (currentTime - lastPulseTime > 5000) {
     pulseCount++;
     lastPulseTime = currentTime;
   }
@@ -53,18 +53,6 @@ const unsigned long MODE_NAME_DURATION = 1000; // Hiện tên mode 1 giây
 // Khởi tạo module màn hình TM1637
 TM1637Display display(CLK_PIN, DIO_PIN);
 
-// Xoay 1 byte segment 180°: A↔D, B↔E, C↔F, G giữ nguyên
-uint8_t rotSeg(uint8_t s) {
-  return ((s & 0x01) << 3) | ((s & 0x08) >> 3)
-       | ((s & 0x02) << 3) | ((s & 0x10) >> 3)
-       | ((s & 0x04) << 3) | ((s & 0x20) >> 3)
-       | (s & 0x40);
-}
-// Hiển thị 4 segment đã xoay 180° và đảo thứ tự trái↔phải
-void displayFlipped(const uint8_t segs[4]) {
-  uint8_t f[4] = { rotSeg(segs[3]), rotSeg(segs[2]), rotSeg(segs[1]), rotSeg(segs[0]) };
-  display.setSegments(f);
-}
 
 uint32_t readADCAvg(int pin) {
   uint32_t sum = 0;
@@ -117,7 +105,7 @@ void playStartupAnimation() {
 
   for(int i = 0; i < 3; i++) { // Lặp vòng tròn 3 lần
     for(int j = 0; j < 12; j++) {
-      displayFlipped(animFrames[j]);
+      display.setSegments(animFrames[j]);
       delay(35); // Thay đổi số này để tăng/giảm tốc độ chạy LED
     }
   }
@@ -125,6 +113,9 @@ void playStartupAnimation() {
 }
 
 void setup() {
+  // Chỉ tắt bit ENA của brownout, không ghi đè cả register như lần trước
+  REG_CLR_BIT(RTC_CNTL_BROWN_OUT_REG, RTC_CNTL_BROWN_OUT_ENA);
+
   Serial.begin(115200);
 
   // Mở rộng ngưỡng ADC lên ~3.1V — bắt buộc phải có, mặc định chỉ đo được ~950mV
@@ -148,6 +139,7 @@ void setup() {
 
   // Chạy hiệu ứng khởi động
   playStartupAnimation();
+  rideTimerStart = millis();
 }
 
 void loop() {
@@ -165,8 +157,10 @@ void loop() {
         displayState = 2; // Đang RPM -> Chuyển sang Vol
       } else if (displayState == 2) {
         displayState = 3; // Đang Vol -> Chuyển sang Nhiệt độ
+      } else if (displayState == 3) {
+        displayState = 4; // Đang Nhiệt độ -> Chuyển sang Timer
       } else {
-        displayState = 1; // Đang Nhiệt độ -> Quay lại RPM
+        displayState = 1; // Đang Timer -> Quay lại RPM
       }
 
       display.clear();
@@ -177,28 +171,33 @@ void loop() {
       if (displayState == 1) Serial.println("Che do: VONG TUA (RPM)");
       else if (displayState == 2) Serial.println("Che do: DIEN AP (VOLTAGE)");
       else if (displayState == 3) Serial.println("Che do: NHIET DO (TEMP)");
+      else if (displayState == 4) Serial.println("Che do: DONG HO (TIMER)");
     }
   }
   lastTouchState = touchState;
 
-  // 2. ĐO VÀ TÍNH TOÁN RPM (Cập nhật sau mỗi 500ms)
+  // 2. ĐO VÀ TÍNH TOÁN RPM (cập nhật mỗi 500ms)
   if (currentMillis - lastRpmTime >= 500) {
-    noInterrupts(); // Tạm tắt ngắt để lấy số đếm chính xác nhất
+    noInterrupts();
     unsigned long currentPulses = pulseCount;
-    pulseCount = 0; // Đặt lại bộ đếm
-    interrupts();   // Bật ngắt trở lại
+    pulseCount = 0;
+    interrupts();
 
-    // Trigger coil Wave: RPM = pulses * (1000/500) * 60 * PULSES_PER_REV_DIVIDER
-    // Nếu RPM hiện = 1/3 thực tế -> đổi * 2 thành * 6. Nếu = 1/2 -> đổi thành * 4.
     int rawRpm = currentPulses * 6 * 60;
 
-    // Lọc làm mượt số hiển thị (Exponential Moving Average)
-    if (smoothedRpm == 0) smoothedRpm = rawRpm; 
-    else smoothedRpm = (rawRpm * 0.4) + (smoothedRpm * 0.6); // Lấy 40% giá trị mới + 60% giá trị cũ
+    static int zeroCount = 0;
+    if (smoothedRpm == 0) {
+      smoothedRpm = rawRpm;
+      zeroCount = 0;
+    } else if (rawRpm == 0) {
+      // 3 window liên tiếp = 1.5 giây không có xung -> tắt máy thật, về 0
+      if (++zeroCount >= 3) { smoothedRpm = 0; zeroCount = 0; }
+    } else {
+      zeroCount = 0;
+      smoothedRpm = (rawRpm * 0.3) + (smoothedRpm * 0.7);
+    }
 
-    // Làm tròn về bội số của 10 để chống chớp nháy hàng đơn vị (Ví dụ: 1453 -> 1450)
     currentRpm = (smoothedRpm / 10) * 10;
-    
     lastRpmTime = currentMillis;
   }
 
@@ -213,12 +212,13 @@ void loop() {
     // Hiện tên mode 1 giây khi mới chuyển: "rPH_" / "UoLt" / "tEHP"
     if (showingModeName) {
       if (currentMillis - modeNameStartTime < MODE_NAME_DURATION) {
-        static const uint8_t modeNames[3][4] = {
+        static const uint8_t modeNames[4][4] = {
           {0x50, 0x73, 0x76, 0x00}, // r P H _  (RPM)
           {0x3E, 0x5C, 0x38, 0x78}, // U o L t  (Volt)
           {0x78, 0x79, 0x76, 0x73}, // t E H P  (Temp)
+          {0x39, 0x38, 0x5C, 0x58}, // C L o c  (Timer)
         };
-        displayFlipped(modeNames[displayState - 1]);
+        display.setSegments(modeNames[displayState - 1]);
       } else {
         showingModeName = false;
         display.clear();
@@ -232,7 +232,7 @@ void loop() {
       if (rpm >= 10)   rpmSegs[2] = display.encodeDigit((rpm / 10) % 10);
       if (rpm >= 100)  rpmSegs[1] = display.encodeDigit((rpm / 100) % 10);
       if (rpm >= 1000) rpmSegs[0] = display.encodeDigit(rpm / 1000);
-      displayFlipped(rpmSegs);
+      display.setSegments(rpmSegs);
     } else if (!showingModeName && displayState == 2) {
       // Hiển thị dạng "12.50" — nhân 100 để giữ 2 số lẻ, bật bit 0x80 vào chữ số thứ 2 để ra dấu chấm
       int v = constrain((int)round(battery_voltage * 100), 0, 9999);
@@ -242,7 +242,7 @@ void loop() {
         display.encodeDigit((v / 10) % 10),
         display.encodeDigit(v % 10)
       };
-      displayFlipped(voltSegs);
+      display.setSegments(voltSegs);
     } else if (!showingModeName && displayState == 3) {
       // Hiển thị nhiệt độ dạng "85°C" — 0x63 = ký hiệu ° trên LED 7 đoạn
       float tempC = getTemperature();
@@ -266,7 +266,15 @@ void loop() {
         tempSegs[1] = display.encodeDigit((-t) / 10);
         tempSegs[2] = display.encodeDigit((-t) % 10);
       }
-      displayFlipped(tempSegs);
+      display.setSegments(tempSegs);
+    } else if (!showingModeName && displayState == 4) {
+      // Hiển thị MM:SS (dưới 1 giờ) hoặc HH:MM (trên 1 giờ), dấu : nhấp nháy mỗi giây
+      unsigned long elapsed = (millis() - rideTimerStart) / 1000;
+      int hi = (elapsed < 3600) ? (elapsed / 60) : (elapsed / 3600);
+      int lo = (elapsed < 3600) ? (elapsed % 60) : ((elapsed % 3600) / 60);
+      hi = constrain(hi, 0, 99);
+      bool colon = (millis() % 1000) < 500;
+      display.showNumberDecEx(hi * 100 + lo, colon ? 0b01000000 : 0, true);
     }
   }
 
